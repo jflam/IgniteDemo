@@ -1,0 +1,93 @@
+---
+title: "SQL Server 2016 R Services NYC Taxi Demo"
+output: html_document
+---
+
+# Abstract 
+
+This is an updated version of the original SQL Server 2016 R Services Walkthrough using 
+SQL Server 2016 R Services. The original version of the document can be found 
+[here](https://msdn.microsoft.com/en-us/library/mt612857.aspx).
+
+It has been updated to be shippable as a self-contained R Tools for Visual Studio project.
+The code for this project can always be found at this [Github repo](https://github.com/jflam/IgniteDemo).
+
+All of the sample code has been tested and verified to work with the following versions
+of the software:
+
+* SQL Server 2016 RTM
+* R Services for SQL Server 2016 RTM, which uses R 3.2.5 
+* R Tools for Visual Studio 2015 v0.5
+
+# Introduction
+
+In this walkthrough, you'll develop an end-to-end solution for predictive modeling using 
+R Services (In-database).
+
+This walkthrough is based on a well-known public data set, the New York City taxi dataset. 
+You will use a combination of R code, SQL Server data, and custom SQL functions to build 
+a classification model that indicates the probability that the driver will get a tip on a 
+particular taxi trip. You'll also deploy your R model to SQL Server and use server data to 
+generate scores based on the model.
+
+This example is chosen because it can easily be extended to all kinds of real-life problems, 
+such as predicting customer responses to sales campaigns, or predicting spending by visitors 
+to events.
+
+Because the model can be invoked from a stored procedure, you can also easily embed it in 
+an application.
+
+# Pre-Requisites
+
+This tutorial assumes that you already have SQL Server 2016 with R Services installed on
+your computer. You can download the free Developer Edition of SQL Server 2016, which
+also contains the R Services functionality from 
+[this link](https://www.microsoft.com/en-us/cloud-platform/sql-server-editions-developers).
+
+Detailed instructions on how to setup R Services within an existing SQL Server 2016 
+installation can be found in [this article](https://msdn.microsoft.com/en-us/library/mt637136.aspx).
+
+# Importing the data into the database
+
+TODO: it is probably a good idea to make the SQL Server backup file for a database 
+available, much the same way that the AdventureWorks database is made available for 
+download.
+
+
+# Validating that the database is imported correctly
+
+The code in the blocks below should all print out TRUE if you have 
+imported the database correctly. Also, it validates that both the
+RevoScaleR library, which is part of Microsoft R Client, and the 
+RODBC library are installed and functioning correctly.
+
+```{r}
+
+# Validate that the connection string to the database is working,
+# and that both the RevoScaleR and RODBC libraries are functioning.
+
+source("dependencies.R")
+source("settings.R")
+
+library(RUnit)
+library(RevoScaleR)
+
+data <- RxSqlServerData(
+    sqlQuery = "select top 10 * from nyctaxi_sample",
+    connectionString = dbConnection)
+
+localFile <- file.path(tempdir(), "sql_data.xdf")
+rxImport(data, 
+    localFile, 
+    overwrite = TRUE, 
+	reportProgress = 0)
+df <- rxDataStep(localFile, reportProgress = 0)
+checkEquals(10, length(df[, 1]))
+
+library(RODBC)
+
+conn <- odbcDriverConnect(connection = dbConnection)
+df <- sqlQuery(conn, query = "select count(*) from nyctaxi_sample")
+checkEquals(1703957, df[1,1])
+```
+
