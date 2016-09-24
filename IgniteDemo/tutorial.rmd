@@ -116,7 +116,7 @@ rxSetComputeContext(cc)
 
 # Execute the following SQL query
 
-sampleDataQuery <- "SELECT 
+faresByPassengerCountSummaryQuery <- "SELECT 
 	tipped, fare_amount, passenger_count, trip_time_in_secs,
 	trip_distance, pickup_datetime, dropoff_datetime, 
 	CAST(pickup_longitude as float) AS pickup_longitude, 
@@ -125,8 +125,8 @@ sampleDataQuery <- "SELECT
 	CAST(dropoff_latitude as float) AS dropoff_latitude 
 FROM nyctaxi_sample"
 
-inDataSource <- RxSqlServerData(
-    sqlQuery = sampleDataQuery, 
+faresByPassengerCountDataSource <- RxSqlServerData(
+    sqlQuery = faresByPassengerCountSummaryQuery,
 	connectionString = dbConnection,
     colClasses = c(
         pickup_longitude = "numeric", 
@@ -139,8 +139,44 @@ inDataSource <- RxSqlServerData(
 # in each ride. This computation takes place on the server and can
 # take some time to run.
 
-results <- rxSummary( ~ fare_amount:F(passenger_count, 1, 6), data = inDataSource)
+results <- rxSummary( 
+    ~fare_amount:F(passenger_count, 1, 6), 
+    data = faresByPassengerCountDataSource)
 
 library(DT)
 datatable(results$categorical[[1]])
 ```
+
+# Visualizing fare amount histogram on R Server
+
+```{r}
+
+# TODO: remove fields that isn't needed in this query
+
+faresHistogramQuery <- "SELECT TOP 10000
+	tipped, fare_amount, passenger_count, trip_time_in_secs,
+	trip_distance, pickup_datetime, dropoff_datetime, 
+	CAST(pickup_longitude as float) AS pickup_longitude, 
+	CAST(pickup_latitude as float) AS pickup_latitude, 
+	CAST(dropoff_longitude as float) AS dropoff_longitude, 
+	CAST(dropoff_latitude as float) AS dropoff_latitude 
+FROM nyctaxi_sample"
+
+faresHistogramDataSource <- RxSqlServerData(
+    sqlQuery = faresHistogramQuery,
+	connectionString = dbConnection,
+    colClasses = c(
+        pickup_longitude = "numeric", 
+		pickup_latitude = "numeric",
+        dropoff_longitude = "numeric", 
+        dropoff_latitude = "numeric"),
+    rowsPerRead = 500)
+
+rxHistogram(
+    ~fare_amount, 
+    data = faresHistogramDataSource, 
+    title = "Fare Amount Histogram")
+
+```
+
+# Visualizing pickup locations on a map on the client
