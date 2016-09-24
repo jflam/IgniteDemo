@@ -100,23 +100,30 @@ never transmitted to the client.
 
 ```{r}
 
+# Establish a connection to the SQL Server R Services compute context
+
 sqlShareDir <- paste("C:\\AllShare\\", Sys.getenv("USERNAME"), sep = "")
 sqlWait <- TRUE
 sqlConsoleOutput <- FALSE
 
-cc <- RxInSqlServer(connectionString = dbConnection, shareDir = sqlShareDir,
-                    wait = sqlWait, consoleOutput = sqlConsoleOutput)
+cc <- RxInSqlServer(
+    connectionString = dbConnection, 
+	shareDir = sqlShareDir,
+    wait = sqlWait, 
+    consoleOutput = sqlConsoleOutput)
 
 rxSetComputeContext(cc)
 
-#Define a DataSource (from a select query) to be used to explore the data and generate features from.
-#Keep in mind that inDataSource is just a reference to the result dataset from the SQL query.
+# Execute the following SQL query
 
-sampleDataQuery <- "select tipped, fare_amount, passenger_count,trip_time_in_secs,trip_distance, 
-    pickup_datetime, dropoff_datetime, cast(pickup_longitude as float) as pickup_longitude, 
-cast(pickup_latitude as float) as pickup_latitude, 
-cast(dropoff_longitude as float) as dropoff_longitude, 
-cast(dropoff_latitude as float)  as dropoff_latitude from nyctaxi_sample"
+sampleDataQuery <- "SELECT 
+	tipped, fare_amount, passenger_count, trip_time_in_secs,
+	trip_distance, pickup_datetime, dropoff_datetime, 
+	CAST(pickup_longitude as float) AS pickup_longitude, 
+	CAST(pickup_latitude as float) AS pickup_latitude, 
+	CAST(dropoff_longitude as float) AS dropoff_longitude, 
+	CAST(dropoff_latitude as float) AS dropoff_latitude 
+FROM nyctaxi_sample"
 
 inDataSource <- RxSqlServerData(
     sqlQuery = sampleDataQuery, 
@@ -128,16 +135,12 @@ inDataSource <- RxSqlServerData(
         dropoff_latitude = "numeric"),
     rowsPerRead = 500)
 
-# TODO: format this a bit nicer for rmarkdown output using DT
+# Compute summary statistics for fares based on passenger count
+# in each ride. This computation takes place on the server and can
+# take some time to run.
 
-start.time <- proc.time()
 results <- rxSummary( ~ fare_amount:F(passenger_count, 1, 6), data = inDataSource)
-used.time <- proc.time() - start.time
-print(paste("It takes CPU Time=", round(used.time[1] + used.time[2], 2), " seconds, Elapsed Time=",
-            round(used.time[3], 2), " seconds to summarize the inDataSource.", sep = ""))
 
 library(DT)
-datatable(results)
-
-
+datatable(results$categorical[[1]])
 ```
