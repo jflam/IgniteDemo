@@ -8,6 +8,7 @@ install_if_not_present <- function(name) {
 
 install_if_not_present("RODBC")
 install_if_not_present("RUnit")
+install_if_not_present("DT")
 
 # Assert that we are running Microsoft R Client 3.2.5
 
