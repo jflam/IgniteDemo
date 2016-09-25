@@ -123,3 +123,83 @@ system.time(
         title = "Fare Amount Histogram"
     )
 )
+
+# 4. Performance test between RODBC and RevoScaleR libraries
+# Returns ~16K rows
+
+# Read in the query from the ComputeTripDistance.sql file
+
+sql <- 
+    iconv(
+        paste(
+            readLines(
+                'c:/users/jflam/src/ignitedemo/ignitedemo/computetripdistance.sql', 
+                encoding = 'UTF-8', 
+                warn = FALSE
+            ),
+            collapse = '\n'
+        ),
+        from = 'UTF-8', 
+        to = 'ASCII', 
+        sub = ''
+    )
+
+# Run the query using RODBC
+
+library(RODBC)
+
+source("Settings.R")
+conn <- odbcDriverConnect(connection = dbConnection)
+
+start.time <- proc.time()
+df1 <- sqlQuery(conn, sql)
+used.time <- proc.time() - start.time
+
+print(
+    paste(
+        "It takes CPU Time=", 
+        round(used.time[1] + used.time[2], 2),
+        "seconds, Elapsed Time=", 
+        round(used.time[3], 2), 
+        "seconds to generate features."
+    )
+)
+
+# This is using RevoScaleR libraries
+
+computedDistanceDataSource <- RxSqlServerData(
+    sqlQuery = sql,
+    connectionString = dbConnection)
+
+library(RevoScaleR)
+rxSetComputeContext("local")
+
+start.time <- proc.time()
+
+localFile <- file.path(tempdir(), "sql_data.xdf")
+rxImport(
+    inData = computedDistanceDataSource,
+    outFile = localFile,
+    overwrite = TRUE,
+    reportProgress = 0)
+
+df2 <- rxDataStep(
+    localFile,
+    reportProgress = 0)
+
+used.time <- proc.time() - start.time
+
+print(
+    paste(
+        "It takes CPU Time=", 
+        round(used.time[1] + used.time[2], 2),
+        "seconds, Elapsed Time=", 
+        round(used.time[3], 2), 
+        "seconds to generate features."
+    )
+)
+
+# Assert that we have the same result set dimensions -- this should 
+# print TRUE TRUE, indicating that both dimensions are the same
+
+print(dim(df1) == dim(df2))
