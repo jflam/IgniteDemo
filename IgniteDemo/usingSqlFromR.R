@@ -73,6 +73,10 @@ top10Data <- RxSqlServerData(
     sqlQuery = "select top 10 * from nyctaxi_sample",
     connectionString = dbConnection)
 
+# The local compute context is used for rxImport and rxDataStep functions.
+
+rxSetComputeContext("local")
+
 localFile <- file.path(tempdir(), "sql_data.xdf")
 rxImport(
     inData = top10Data,
