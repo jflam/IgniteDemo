@@ -53,7 +53,6 @@ TODO: it is probably a good idea to make the SQL Server backup file for a databa
 available, much the same way that the AdventureWorks database is made available for 
 download.
 
-
 # Validating that the database is imported correctly
 
 The code in the blocks below should all print out TRUE if you have 
@@ -72,16 +71,23 @@ source("settings.R")
 library(RUnit)
 library(RevoScaleR)
 
-data <- RxSqlServerData(
+cc = rxSetComputeContext("local")
+
+top10Data <- RxSqlServerData(
     sqlQuery = "select top 10 * from nyctaxi_sample",
     connectionString = dbConnection)
 
 localFile <- file.path(tempdir(), "sql_data.xdf")
-rxImport(data, 
-    localFile, 
+rxImport(
+    inData = top10Data,
+    outFile = localFile,
     overwrite = TRUE, 
 	reportProgress = 0)
-df <- rxDataStep(localFile, reportProgress = 0)
+
+df <- rxDataStep(
+    localFile, 
+    reportProgress = 0)
+
 checkEquals(10, length(df[, 1]))
 
 library(RODBC)
@@ -108,31 +114,22 @@ sqlConsoleOutput <- FALSE
 
 cc <- RxInSqlServer(
     connectionString = dbConnection, 
-	shareDir = sqlShareDir,
+    shareDir = sqlShareDir,
     wait = sqlWait, 
     consoleOutput = sqlConsoleOutput)
 
 rxSetComputeContext(cc)
 
-# Execute the following SQL query
+# Select all of the fare amounts and passenger counts from the 1.7MM 
+# records in the table
 
 faresByPassengerCountSummaryQuery <- "SELECT 
-	tipped, fare_amount, passenger_count, trip_time_in_secs,
-	trip_distance, pickup_datetime, dropoff_datetime, 
-	CAST(pickup_longitude as float) AS pickup_longitude, 
-	CAST(pickup_latitude as float) AS pickup_latitude, 
-	CAST(dropoff_longitude as float) AS dropoff_longitude, 
-	CAST(dropoff_latitude as float) AS dropoff_latitude 
+	fare_amount, passenger_count
 FROM nyctaxi_sample"
 
 faresByPassengerCountDataSource <- RxSqlServerData(
     sqlQuery = faresByPassengerCountSummaryQuery,
 	connectionString = dbConnection,
-    colClasses = c(
-        pickup_longitude = "numeric", 
-		pickup_latitude = "numeric",
-        dropoff_longitude = "numeric", 
-        dropoff_latitude = "numeric"),
     rowsPerRead = 500)
 
 # Compute summary statistics for fares based on passenger count
@@ -143,6 +140,8 @@ results <- rxSummary(
     ~fare_amount:F(passenger_count, 1, 6), 
     data = faresByPassengerCountDataSource)
 
+# TODO: cleanup the presentation a bit here
+
 library(DT)
 datatable(results$categorical[[1]])
 ```
@@ -151,9 +150,72 @@ datatable(results$categorical[[1]])
 
 ```{r}
 
-# TODO: remove fields that isn't needed in this query
+faresHistogramQuery <- "SELECT TOP 10000 fare_amount FROM nyctaxi_sample"
 
-faresHistogramQuery <- "SELECT TOP 10000
+faresHistogramDataSource <- RxSqlServerData(
+    sqlQuery = faresHistogramQuery,
+	connectionString = dbConnection,
+    rowsPerRead = 500)
+
+rxHistogram(
+    ~fare_amount, 
+    data = faresHistogramDataSource, 
+    title = "Fare Amount Histogram")
+```
+
+# Visualizing pickup locations on a map on the client
+
+TODO: time permitting -- optional
+
+# Feature Engineering using R
+
+Note that the R based solution doesn't seem to work in the RTM SQL 2016.
+TODO: debug this with the R Server team
+
+```{r}
+
+# Define an R function to compute the direct distance between pickup and dropoff 
+# as a new feature using the Haversine Formula: 
+# https://en.wikipedia.org/wiki/Haversine_formula
+
+env <- new.env()
+
+env$ComputeDist <- function(pickup_long, pickup_lat, dropoff_long, dropoff_lat) {
+    R <- 6371 / 1.609344 #radius in mile
+    delta_lat <- dropoff_lat - pickup_lat
+    delta_long <- dropoff_long - pickup_long
+    degrees_to_radians = pi / 180.0
+    a1 <- sin(delta_lat / 2 * degrees_to_radians)
+    a2 <- as.numeric(a1) ^ 2
+    a3 <- cos(pickup_lat * degrees_to_radians)
+    a4 <- cos(dropoff_lat * degrees_to_radians)
+    a5 <- sin(delta_long / 2 * degrees_to_radians)
+    a6 <- as.numeric(a5) ^ 2
+    a <- a2 + a3 * a4 * a6
+    c <- 2 * atan2(sqrt(a), sqrt(1 - a))
+    d <- R * c
+    return(d)
+}
+
+# Define a new data source to store the features. Note that we define 
+# the types of specific variables as numeric
+
+featureDataSource = RxSqlServerData(
+    table = "[dbo].features",
+    colClasses = c(
+        pickup_longitude = "numeric", 
+		pickup_latitude = "numeric",
+        dropoff_longitude = "numeric", 
+		dropoff_latitude = "numeric",
+        passenger_count = "numeric", 
+		trip_distance = "numeric",
+        trip_time_in_secs = "numeric", 
+		direct_distance = "numeric"),
+    connectionString = dbConnection)
+
+rxGetVarInfo(featureDataSource)
+
+featureSelectionQuery <- "SELECT 
 	tipped, fare_amount, passenger_count, trip_time_in_secs,
 	trip_distance, pickup_datetime, dropoff_datetime, 
 	CAST(pickup_longitude as float) AS pickup_longitude, 
@@ -162,21 +224,127 @@ faresHistogramQuery <- "SELECT TOP 10000
 	CAST(dropoff_latitude as float) AS dropoff_latitude 
 FROM nyctaxi_sample"
 
-faresHistogramDataSource <- RxSqlServerData(
-    sqlQuery = faresHistogramQuery,
+featureSelectionDataSource <- RxSqlServerData(
+    sqlQuery = featureSelectionQuery, 
 	connectionString = dbConnection,
     colClasses = c(
         pickup_longitude = "numeric", 
 		pickup_latitude = "numeric",
         dropoff_longitude = "numeric", 
-        dropoff_latitude = "numeric"),
+		dropoff_latitude = "numeric"),
     rowsPerRead = 500)
 
-rxHistogram(
-    ~fare_amount, 
-    data = faresHistogramDataSource, 
-    title = "Fare Amount Histogram")
+# Create a new feature (direct_distance) by calling rxDataStep() function, 
+# which calls the env$ComputeDist function to process records. The result
+# of this computation is stored in the featureDataSource object, which 
+# will be used as the feature set for training our machine learning models.
+
+start.time <- proc.time()
+rxDataStep(
+    inData = featureSelectionDataSource,
+    outFile = featureDataSource, 
+    overwrite = TRUE,
+    varsToKeep = c(
+		"tipped", 
+		"fare_amount", 
+		"passenger_count", 
+		"trip_time_in_secs",
+        "trip_distance", 
+		"pickup_datetime", 
+		"dropoff_datetime", 
+		"pickup_longitude",
+        "pickup_latitude", 
+		"dropoff_longitude", 
+        "dropoff_latitude"),
+    transforms = list(
+        direct_distance = ComputeDist(
+                            pickup_longitude, 
+                            pickup_latitude, 
+							dropoff_longitude,
+                            dropoff_latitude)),
+    transformEnvir = env, 
+    rowsPerRead = 500, 
+	reportProgress = 3)
+
+used.time <- proc.time() - start.time
+print(paste("It takes CPU Time=", round(used.time[1] + used.time[2], 2),
+            " seconds, Elapsed Time=", round(used.time[3], 2), " seconds to generate features.", sep = ""))
+```
+
+# Using SQL to generate our features
+
+Alternatively, use a user defined function in SQL to create features
+Sometimes, feature engineering in SQL might be faster than R
+You need to choose the most efficient way based on real situation
+Here, featureEngineeringQuery is just a reference to the result from a SQL query. 
+
+Note that in this example, we are doing a 1% downsampling of the 1% 
+downsampled data. This does not seem to be the intent of the R based 
+query.
+
+```{r}
+
+featureEngineeringQuery = "SELECT 
+	tipped, 
+	fare_amount, 
+	passenger_count,
+	trip_time_in_secs,
+	trip_distance, 
+    pickup_datetime, 
+	dropoff_datetime, 
+    dbo.fnCalculateDistance(
+		pickup_latitude, 
+		pickup_longitude,  
+		dropoff_latitude, 
+		dropoff_longitude) AS direct_distance,
+    pickup_latitude, 
+	pickup_longitude,  
+	dropoff_latitude, 
+	dropoff_longitude
+FROM nyctaxi_sample
+    TABLESAMPLE (1 PERCENT) REPEATABLE (98052)
+"
+featureDataSource = RxSqlServerData(
+	sqlQuery = featureEngineeringQuery,
+    colClasses = c(
+        pickup_longitude = "numeric", 
+		pickup_latitude = "numeric",
+        dropoff_longitude = "numeric", 
+		dropoff_latitude = "numeric",
+        passenger_count = "numeric", 
+		trip_distance = "numeric",
+        trip_time_in_secs = "numeric", 
+		direct_distance = "numeric"),
+    connectionString = dbConnection)
+
+rxGetVarInfo(data = featureDataSource)
 
 ```
 
-# Visualizing pickup locations on a map on the client
+# Training our machine learning models
+
+```{r}
+
+# build classification model to predict tipped or not
+system.time(
+    logitObj <- rxLogit(
+        tipped ~ passenger_count + trip_distance + trip_time_in_secs + direct_distance, 
+        data = featureDataSource))
+summary(logitObj)
+
+# predict and write the prediction results back to SQL Server table
+scoredOutput <- RxSqlServerData(
+    connectionString = dbConnection,
+    table = "taxiScoreOutput"
+)
+
+rxPredict(
+    modelObject = logitObj, 
+    data = featureDataSource, 
+    outData = scoredOutput,
+    predVarNames = "Score", 
+    type = "response", 
+    writeModelVars = TRUE, 
+    overwrite = TRUE)
+
+```
