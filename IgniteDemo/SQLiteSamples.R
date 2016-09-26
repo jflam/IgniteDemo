@@ -41,3 +41,43 @@ sqlQuery(sqlite, "DROP TABLE COMPANY;");
 # Drop the connection
 
 odbcClose(sqlite);
+
+# Another variation of this sample using the RSQLite package.In this
+# example, you can create an in-memory SQLite database, and load it
+# or save it with data directly from R dataframes.
+#
+# The latest version of this can be found on Github:
+# https://github.com/rstats-db/RSQLite
+
+library(DBI)
+
+# Create an ephemeral in-memory RSQLite database
+
+con <- dbConnect(RSQLite::SQLite(), ":memory:")
+
+dbListTables(con)
+dbWriteTable(con, "mtcars", mtcars)
+dbListTables(con)
+
+dbListFields(con, "mtcars")
+dbReadTable(con, "mtcars")
+
+# You can fetch all results:
+
+res <- dbSendQuery(con, "SELECT * FROM mtcars WHERE cyl = 4")
+dbFetch(res)
+dbClearResult(res)
+
+# Or a chunk at a time
+
+res <- dbSendQuery(con, "SELECT * FROM mtcars WHERE cyl = 4")
+while (!dbHasCompleted(res)) {
+    chunk <- dbFetch(res, n = 5)
+    print(nrow(chunk))
+}
+
+# Clear the result
+dbClearResult(res)
+
+# Disconnect from the database
+dbDisconnect(con)
