@@ -12,8 +12,7 @@ install_if_not_present <- function(name) {
 # These are the mandatory dependencies in this project
 
 install_if_not_present("RODBC")
-install_if_not_present("RUnit")
-install_if_not_present("DT")
+install_if_not_present("RSQLite")
 install_if_not_present("RODBCDBI")
 
 # Assert that we are running R >= 3.3.1

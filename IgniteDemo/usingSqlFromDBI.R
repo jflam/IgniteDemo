@@ -22,3 +22,32 @@ df <- dbFetch(res)
 
 res <- dbSendQuery(conn, "select count(*) from nyctaxi_sample")
 df <- dbFetch(res)
+
+dbDisconnect(conn)
+
+# Use the DBI interface to talk to SQLite
+
+library(RSQLite)
+
+# Access the built-in SQLite database that ships with the RSQLite package
+
+conn <- datasetsDb()
+dbListTables(conn)
+
+# Read the mtcars table into a local dataframe
+
+df <- dbReadTable(conn, "mtcars")
+
+dbDisconnect(conn)
+
+# Write some data out to a local SQLite file called SQLiteDemo.db, and read
+# it back in via a SQL query.
+
+conn <- dbConnect(SQLite(), dbname = "SQLiteDemo.db")
+
+dbWriteTable(conn, "mtcars", mtcars)
+
+res <- dbSendQuery(conn, "select * from mtcars where cyl > 4")
+df <- dbFetch(res)
+
+dbDisconnect(conn)
