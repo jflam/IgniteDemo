@@ -77,12 +77,18 @@ top10Data <- RxSqlServerData(
 
 rxSetComputeContext("local")
 
+# Define a local file that will store the resultset as an XDF file in the local
+# filesystem. XDF files are a performance optimized binary file format for 
+# storing structured data.
+
 localFile <- file.path(tempdir(), "sql_data.xdf")
 rxImport(
     inData = top10Data,
     outFile = localFile,
     overwrite = TRUE,
     reportProgress = 0)
+
+# Read data from the local XDF file into an R dataframe
 
 df <- rxDataStep(
     localFile,
