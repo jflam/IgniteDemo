@@ -69,29 +69,20 @@ df <- sqlQuery(conn, sql)
 
 library(RevoScaleR)
 
+# Use the local compute context
+
+rxSetComputeContext("local")
+
+# Define the query
+
 top10Data <- RxSqlServerData(
     sqlQuery = "select top 10 * from nyctaxi_sample",
     connectionString = dbConnection)
 
-# The local compute context is used for rxImport and rxDataStep functions.
+# Use the rxImport function to move the data from the server to the client
 
-rxSetComputeContext("local")
-
-# Define a local file that will store the resultset as an XDF file in the local
-# filesystem. XDF files are a performance optimized binary file format for 
-# storing structured data.
-
-localFile <- file.path(tempdir(), "sql_data.xdf")
-rxImport(
-    inData = top10Data,
-    outFile = localFile,
-    overwrite = TRUE,
-    reportProgress = 0)
-
-# Read data from the local XDF file into an R dataframe
-
-df <- rxDataStep(
-    localFile,
+df <- rxImport(
+    top10Data, 
     reportProgress = 0)
 
 # 3. Simple query using Microsoft R Services for SQL Server 2016, returning
@@ -136,7 +127,7 @@ system.time(
 # Read in the query from the ComputeTripDistance.sql file
 
 sql <- 
-    iconv(
+iconv(
         paste(
             readLines(
                 'c:/users/jflam/src/ignitedemo/ignitedemo/computetripdistance.sql', 
@@ -173,24 +164,17 @@ print(
 
 # This is using RevoScaleR libraries
 
+library(RevoScaleR)
+rxSetComputeContext("local")
+
 computedDistanceDataSource <- RxSqlServerData(
     sqlQuery = sql,
     connectionString = dbConnection)
 
-library(RevoScaleR)
-rxSetComputeContext("local")
-
 start.time <- proc.time()
 
-localFile <- file.path(tempdir(), "sql_data.xdf")
-rxImport(
-    inData = computedDistanceDataSource,
-    outFile = localFile,
-    overwrite = TRUE,
-    reportProgress = 0)
-
-df2 <- rxDataStep(
-    localFile,
+df2 <- rxImport(
+    computedDistanceDataSource,
     reportProgress = 0)
 
 used.time <- proc.time() - start.time
