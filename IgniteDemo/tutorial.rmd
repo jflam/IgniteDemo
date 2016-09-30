@@ -19,6 +19,10 @@ of the software:
 * R Services for SQL Server 2016 RTM, which uses R 3.2.5 
 * R Tools for Visual Studio 2015 v0.5
 
+Note that you *must* be using Microsoft R Client to run the code in this tutorial.
+You can look at the HTML file that is in this repository if you're interested in 
+reading the results of running this RMarkdown document.
+
 # Introduction
 
 In this walkthrough, you'll develop an end-to-end solution for predictive modeling using 
@@ -150,7 +154,7 @@ datatable(results$categorical[[1]])
 
 ```{r}
 
-faresHistogramQuery <- "SELECT TOP 10000 fare_amount FROM nyctaxi_sample"
+faresHistogramQuery <- "SELECT TOP 1000 fare_amount FROM nyctaxi_sample"
 
 faresHistogramDataSource <- RxSqlServerData(
     sqlQuery = faresHistogramQuery,
@@ -215,7 +219,7 @@ featureDataSource = RxSqlServerData(
 
 rxGetVarInfo(featureDataSource)
 
-featureSelectionQuery <- "SELECT 
+featureSelectionQuery <- "SELECT TOP 1000
 	tipped, fare_amount, passenger_count, trip_time_in_secs,
 	trip_distance, pickup_datetime, dropoff_datetime, 
 	CAST(pickup_longitude as float) AS pickup_longitude, 
