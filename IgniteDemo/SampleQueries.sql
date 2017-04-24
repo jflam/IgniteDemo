@@ -3,4 +3,4 @@
 -- some of the samples in this project. You must establish a connection
 -- with SQL Server on this machine, and the database NYCTaxiData.
 
-SELECT * FROM mtcars WHERE cyl > 4
+SELECT TOP 100 * FROM nyctaxi_sample
